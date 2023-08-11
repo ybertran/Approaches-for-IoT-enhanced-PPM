@@ -304,7 +304,7 @@ for epoch in range(epochs):
     print("Epoch: ", epoch)
     for i, data_act in enumerate(dataset, 0): # loop over the data, and jump with step = bptt.
         model.train()
-        data_act = data_act[0].to(device)
+        data_act = data_act.to(device)
         y_ = model(data_act).to(device) 
         y_probs = F.softmax(y_, dim=1)  # Apply softmax activation
         train_batch = torch.tensor(train_y[i*batch_size:(i+1)*batch_size], dtype=torch.long).to(device)  # Change to long data type
