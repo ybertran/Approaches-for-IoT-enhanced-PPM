@@ -16,6 +16,7 @@ import torch.nn.functional as F
 
 logging.getLogger().setLevel(logging.INFO)
 
+
 class Model(nn.Module):
     def __init__(self, vocab_size, dropout, lstm_size, num_classes):
         super(Model, self).__init__()
@@ -24,7 +25,13 @@ class Model(nn.Module):
         self.lstm_size = lstm_size
         self.num_classes = num_classes
 
-        self.lstm = nn.LSTM(self.vocab_size[0], self.vocab_size[0], dropout=self.lstm_dropout, num_layers=self.lstm_size, batch_first=True)
+        self.lstm = nn.LSTM(
+            self.vocab_size[0],
+            self.vocab_size[0],
+            dropout=self.lstm_dropout,
+            num_layers=self.lstm_size,
+            batch_first=True,
+        )
         self.final_output = nn.Linear(self.vocab_size[0], self.num_classes)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.softmax = F.softmax
@@ -36,4 +43,3 @@ class Model(nn.Module):
         output = self.final_output(output)
         output = self.softmax(output, dim=1)  # Apply softmax activation
         return output
-
