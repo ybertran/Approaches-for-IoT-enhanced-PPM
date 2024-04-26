@@ -1,18 +1,12 @@
 from __future__ import print_function, division
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-import tensorflow as tf
-from keras.models import Sequential, Model
-from keras.layers import LSTM, GRU, SimpleRNN, Dense, Input, LayerNormalization, BatchNormalization
-from keras.utils import get_file
+from keras.models import Model
+from keras.layers import LSTM, Dense, Input, LayerNormalization
 from keras.optimizers import Nadam
 from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from keras.optimizers import Nadam
 from sklearn import preprocessing
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from collections import Counter
 import numpy as np
-import copy
 import csv
 import time
 from datetime import datetime
