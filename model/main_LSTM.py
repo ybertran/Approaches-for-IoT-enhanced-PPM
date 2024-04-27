@@ -1,5 +1,10 @@
 import os
+import sys
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+# Add the parent directory of the current script to the Python module search path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import numpy as np
 import pandas as pd
 
@@ -10,6 +15,7 @@ from tensorflow.keras.optimizers import Nadam
 from tensorflow.keras.layers import LSTM, Dense, Input, LayerNormalization
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from sklearn.utils.class_weight import compute_class_weight
+
 from util.dataset_manager import DatasetManager
 
 pd.set_option('display.max_rows', None)
