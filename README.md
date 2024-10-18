@@ -1,6 +1,6 @@
-# process_multimix
+# IOTPPM
 
-## Model
+## model
 Contains the code for the multimix LSTM, using `Pytorch-Lightning`
 
 ## Notebooks
