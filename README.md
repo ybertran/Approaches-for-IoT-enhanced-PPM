@@ -10,14 +10,16 @@ In this file, we read in the data, preprocess it and train the model. The data i
 This file appears is part of the project that evaluates the LSTM model performance on a dataset of event logs. 
 It loads the pre-trained Keras model from a specified file path and reads a CSV file containing event log data into a Pandas DataFrame.
 
+- requirements.txt
+
+The requirements for Python and the packages
+
 ## util
 Contains the files:
 - Arguments.py # Args class for handling dataset-specific arguments and parameters.
 - dataset_confs.py # Class to handle the dataset configurations
 - dataset_manager.py # Class to handle the dataset
 - EncoderFactory.py # Class to handle the encoder
-
-
 
 ## other
 contains license, readme, .gitignore. Feel free to make changes on anything.
