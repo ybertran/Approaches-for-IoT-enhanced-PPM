@@ -1,16 +1,34 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Feb 17 20:44:24 2023
-
-@author: u0138175
-"""
 import os
 import pickle
-from settings import global_setting, model_setting, training_setting
-
 
 class Args:
-    """preprocessing for the machine learning models."""
+    """
+    Args class for handling dataset-specific arguments and parameters.
+    Attributes:
+        dataset_name (str): The name of the dataset.
+    Methods:
+        __init__(dataset_name):
+            Initializes the Args object with the given dataset name.
+        extract_args(data, dataset_manager):
+            Extracts and returns dataset-specific arguments including encoder arguments, 
+            minimum and maximum prefix lengths, activity column, and resource column.
+            Parameters:
+                data (DataFrame): The dataset to extract arguments from.
+                dataset_manager (object): An object that manages dataset-specific properties.
+            Returns:
+                tuple: A tuple containing:
+                    - cls_encoder_args (dict): Encoder arguments.
+                    - min_prefix_length (int): Minimum prefix length.
+                    - max_prefix_length (int): Maximum prefix length.
+                    - activity_col (str): The activity column name.
+                    - resource_col (str): The resource column name.
+        params_args(optimal_params_filename):
+            Loads and returns parameters from a given file.
+            Parameters:
+                optimal_params_filename (str): The filename of the file containing optimal parameters.
+            Returns:
+                dict: The loaded parameters.
+    """
 
     def __init__(self, dataset_name):
         self.dataset_name = dataset_name

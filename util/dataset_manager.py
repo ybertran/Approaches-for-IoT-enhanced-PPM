@@ -16,6 +16,32 @@ import time
 from datetime import datetime
 
 class DatasetManager:
+    """DatasetManager is a class for managing datasets, including reading, preprocessing, and generating prefix data.
+    Attributes:
+        dataset_name (str): The name of the dataset.
+        case_id_col (str): The column name for case IDs.
+        activity_col (str): The column name for activity IDs.
+        timestamp_col (str): The column name for timestamps.
+        context (bool): A flag indicating whether context data is included.
+        dummy (bool): A flag indicating whether dummy data is included.
+        iot (bool): A flag indicating whether IoT data is included.
+        columns (list): A list of columns to keep after preprocessing.
+        num_features (int): The number of features in the dataset.
+    Methods:
+        __init__(dataset_name, context, dummy, iot):
+            Initializes the DatasetManager with the given parameters.
+        generate_prefix_data(data, min_length, max_length, gap=1):
+            Generates prefix data from the given dataset.
+        read_data():
+            Reads the dataset from a CSV file.
+        preprocess_data(df, data_input_type):
+        custom_sort(item):
+            Custom sorting function to convert strings to integers for numerical sorting.
+        create_relevant_data(eventlog):
+        create_index(lineseq, timeseqs, timeseqs2, IoT_seqs):
+        create_OHE_data(lineseq, timeseqs, timeseqs2, timeseqs3, timeseqs4, IoT_seqs, chars, maxlen, divisor, divisor2, char_indices, target_char_indices, target_chars, IoT_cols, IoT_sentences):
+            Creates one-hot encoded data from the given sequences and indices.
+    """
 
     def __init__(self, dataset_name, context, dummy, iot):
         self.dataset_name = dataset_name
