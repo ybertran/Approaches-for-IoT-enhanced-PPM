@@ -17,5 +17,7 @@ Contains the files:
 - dataset_manager.py # Class to handle the dataset
 - EncoderFactory.py # Class to handle the encoder
 
+
+
 ## other
 contains license, readme, .gitignore. Feel free to make changes on anything.

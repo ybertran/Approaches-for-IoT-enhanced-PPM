@@ -117,4 +117,4 @@ model_output_path = 'output_files/models/model_{epoch:02d}-{val_loss:.2f}_'+ str
 model_checkpoint = ModelCheckpoint(model_output_path + '.keras', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto')
 lr_reducer = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, verbose=0, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0)
 
-model.fit(X, y_a, validation_split=0.2, verbose=2, callbacks=[early_stopping, model_checkpoint, lr_reducer], class_weight=class_weight_dict, batch_size=maxlen, epochs=100)
+model.fit(X, y_a, validation_split=0.2, verbose=2, callbacks=[early_stopping, model_checkpoint, lr_reducer], class_weight=class_weight_dict, batch_size=maxlen, epochs=1)
