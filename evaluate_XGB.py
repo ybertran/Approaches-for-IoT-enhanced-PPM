@@ -8,10 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xgboost as xgb
 
-iot_granularities = ['15min'] #['1h', '15min', '5min', '1min'] # granularity level at which IoT data are aggregated
-lag_windows = [25] #[0, 5, 10, 25, 50, 100] # number of lags to add to the input data (= number of time steps model can see in the past)
-time_horizon = ['1min', '5min', '15min', '30min', '1h', '2h'] # time window in which next pump adjustment should occur
-targets = ['pump adjustment present in next time window', 'pump adjustment present in next iot granularity', 'pump adjustment is next activity']
+iot_granularities = ['15min'] # granularity level at which IoT data are aggregated
+lag_windows = [25] # number of lags to add to the input data (= number of time steps model can see in the past)
+targets = ['pump adjustment is next activity']
 directory_paths = ['xgb results/', 'C:/Users/yabertra/OneDrive - UGent/IoT PPM/xgb results/']
 data_split = {'train': 0.7, 'val': 0.2, 'test': 0.1}
 
@@ -60,22 +59,12 @@ def visualise_f1_heatmap(target, lag_window, iot_granularities, time_horizon):
     plt.ylabel("IoT granularity")
     plt.show()
 
-# compare the f1 score of models with a heatmap
-#for target in targets:
-#    print('############################################################################################################')
- #   for lag_window in lag_windows:
- #       print('-------------------------------------------------------------------------------------------------------------')
- #       visualise_f1_heatmap(target, lag_window, iot_granularities=iot_granularities, time_horizon=time_horizon)
-
-
 def evaluate_auc(iot_granularities, lag_windows, target='pump adjustment is next activity'):
 
     model_directory = f'xgb results/model {data_split['train']} - {data_split['val']} - {data_split['test']}/'
-    #model_directory = 'C:/Users/yabertra/OneDrive - UGent/IoT PPM/xgb results/model '
 
     for iot_granularity in iot_granularities:
         print(f'Current IoT granularity = {iot_granularity}')
-        #horizon = [iot_granularity]
 
         for lag_window in lag_windows:
             print(f'Current lag window: {lag_window}')
@@ -83,6 +72,7 @@ def evaluate_auc(iot_granularities, lag_windows, target='pump adjustment is next
             X_test = pd.read_csv('generated datasets/X_test ' +  iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows.csv', index_col=['CaseID', 'New Timestamp'])
             y_test = pd.read_csv('generated datasets/y_test ' +  iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows.csv', index_col='Unnamed: 0')
 
+            # reindexing necessary to sort the X and y dataframes similarly and make them correspond with event log to obtain time before adjustments later
             y_test.index = [tuple(i.strip("()").split(", ")) for i in y_test.index]
             y_test.index = pd.MultiIndex.from_tuples(y_test.index, names=['BatchID', 'EventID'])
             y_test.index = pd.MultiIndex.from_arrays(
@@ -93,38 +83,38 @@ def evaluate_auc(iot_granularities, lag_windows, target='pump adjustment is next
             X_test.sort_index(inplace=True)
             y_test.sort_index(inplace=True)
 
+            # load the model
             model_path = model_directory + iot_granularity + ' iot granularity - ' + str(
                 lag_window) + ' lag windows ' + target + ' target/'
 
-            #model_path = 'xgb results/model ' + iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows ' + horizon + ' time horizon/'
             if path.exists(model_path):
                 loaded_model = xgb.XGBClassifier()
 
-
                 loaded_model.load_model(model_path + 'model.json')
                 loaded_model.n_classes_ = 2
+
+                # use the model for prediction on the test set
                 y_pred = loaded_model.predict(X_test)
                 y_prob = loaded_model.predict_proba(X_test)
 
                 y_prob1 = y_prob[:,1]
 
+                # store all the results in a dataframe and save it
                 results = pd.DataFrame(columns= ['label', 'prediction', 'probabilities'])
                 results['label'] = y_test
                 results['prediction'] = y_pred
                 results['probabilities'] = y_prob1 #, columns=['label', 'prediction', 'probabilities'])
                 results.to_csv('C:/Users/yabertra/OneDrive - UGent/IoT PPM/test results/xgb 15 min 25 lags results.csv')
 
+                # print various quality metrics
                 print(f'AuC: {roc_auc_score(y_test, y_pred)}')
                 print(f'AuC prob: {roc_auc_score(y_test, y_prob1)}')
                 print(f'F1 score: {f1_score(y_test, y_pred)}')
-                #print(f'F1 score prob: {f1_score(y_test, y_prob1)}')
                 print(f'Accuracy: {accuracy_score(y_test, y_pred)}')
-                #print(f'Accuracy prob: {accuracy_score(y_test, y_prob1)}')
                 print(f'Precision: {precision_score(y_test, y_pred)}')
-                #print(f'Precision prob: {precision_score(y_test, y_prob1)}')
                 print(f'Recall: {recall_score(y_test, y_pred)}')
-                #print(f'Recall prob: {recall_score(y_test, y_prob1)}')
 
+                # show and save roc and precision-recall curves
                 PrecisionRecallDisplay.from_predictions(y_test, y_pred)
                 plt.show()
                 PrecisionRecallDisplay.from_predictions(y_test, y_prob1)
@@ -156,7 +146,6 @@ def evaluate_auc(iot_granularities, lag_windows, target='pump adjustment is next
                     batch_event_log.reset_index(inplace=True, drop=True)
 
                     batch_index = pd.MultiIndex.from_arrays(arrays=[np.full(len(batch_event_log),batch),batch_event_log.index], names=['CaseID', 'New Timestamp'])
-                    #batch_event_log = event_log.loc[event_log['CaseID'] == batch]
                     batch_event_log.set_index(batch_index, inplace=True, drop=True)
                     batch_event_log = batch_event_log.copy()
                     batch_event_log.loc[:,'TimestampDif'] = batch_event_log['CompleteTimestamp'].diff()

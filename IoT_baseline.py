@@ -29,17 +29,17 @@ batches_list = event_data['CaseID'].unique()
 iot_parameters = ['Pump Circulation Flow', 'Filter 1 DeltaP', 'Filter 1 Inlet Pressure', 'Filter 2 DeltaP', 'Tank Pressure']
 
 # define data hyperparameters
-iot_granularities = ['15min'] #['1h', '15min', '5min', '1min'] # granularity level at which IoT data are aggregated ['1h', '15min', '5min', '1min']
-lag_windows = [25] #[0, 5, 10, 25, 50, 100] # number of lags to add to the input data (= number of time steps model can see in the past) [5, 10, 25, 50, 100]
+iot_granularities = ['1h', '15min', '5min', '1min'] # granularity level at which IoT data are aggregated
+lag_windows = [0, 5, 10, 25, 50, 100] # number of lags to add to the input data (= number of time steps model can see in the past)
 data_split = {'train': 0.7, 'val': 0.2, 'test': 0.1}
-target = 'pump adjustment is next activity' # how the target variable is defined: either 'pump adjustment is next activity' (rule A) or 'pump adjustment present in next time horizon' (rule B)
+target = 'pump adjustment is next activity' # how the target variable is defined
 
 # define model hyperparameters
-max_depth = [2, 5, 10]#, 15, 20],
+max_depth = [2, 5, 10]
 learning_rate = [0.01, 0.1, 0.3]
 n_estimators = [20, 50, 100, 200]
 subsample = [0.5, 0.8, 1.0]
-min_child_weight = [2, 5, 10]#, 15, 20]
+min_child_weight = [2, 5, 10]
 
 ###################
 # preprocess data #
@@ -52,8 +52,6 @@ for iot_granularity in iot_granularities:
         time_horizon = [iot_granularity]
 
     for lag_window in lag_windows:
-        #if pd.Timedelta(horizon) < pd.Timedelta(iot_granularity):
-        #    continue
 
         print(f'Current lag window: {lag_window}')
 
@@ -69,45 +67,38 @@ for iot_granularity in iot_granularities:
             batch_event_data = event_data.loc[event_data['CaseID'] == batch]
             batch_event_data.reset_index(inplace=True, drop=True)
 
-            if target == 'pump adjustment is next activity':
+            # define target following rule: if next event is pump adjustment, target == 1
+            X_y_index = MultiIndex.from_arrays(arrays=[np.full(len(batch_event_data),batch),batch_event_data.index], names=['CaseID', 'New Timestamp'])
+            y_batch = pd.Series(index=X_y_index)
+            X_batch = pd.DataFrame(index=X_y_index, columns= [col + '_lag_' + str(lag) for col in iot_parameters for lag in range(lag_window+1)], dtype = 'float64')
 
-                # define target following rule A: if next event is pump adjustment, target == 1
-                X_y_index = MultiIndex.from_arrays(arrays=[np.full(len(batch_event_data),batch),batch_event_data.index], names=['CaseID', 'New Timestamp'])
-                y_batch = pd.Series(index=X_y_index)
-                X_batch = pd.DataFrame(index=X_y_index, columns= [col + '_lag_' + str(lag) for col in iot_parameters for lag in range(lag_window+1)], dtype = 'float64')
-                # loop over events to check rules and populate the target series
-                for event in batch_event_data.index:
+            # loop over events to check rules and populate the target series
+            for event in batch_event_data.index:
 
-                    #########################################
-                    # construct target variable accordingly #
-                    #########################################
+                #########################################
+                # construct target variable accordingly #
+                #########################################
 
-                    try:
-                        next_event = batch_event_data.at[event+1, 'ActivityID']
-                        if 'Pump adjustment' == next_event:
-                            y_batch.loc[(batch, event)] = 1
-                        else:
-                            y_batch.loc[(batch, event)] = 0
+                try:
+                    next_event = batch_event_data.at[event+1, 'ActivityID']
+                    if 'Pump adjustment' == next_event:
+                        y_batch.loc[(batch, event)] = 1
+                    else:
+                        y_batch.loc[(batch, event)] = 0
 
-                    except KeyError:
-                        #print(batch_event_data.loc[event, 'ActivityID'])
-                        break
+                except KeyError:
+                    break
 
-                    ##################################################################
-                    # aggregate IoT data to chosen granularity and lag window length #
-                    ##################################################################
+                ##################################################################
+                # aggregate IoT data to chosen granularity and lag window length #
+                ##################################################################
 
-                    event_timestamp = batch_event_data.loc[event,'CompleteTimestamp']
-                    for parameter in iot_parameters:
-                        for lag in range(lag_window+1):
-                            iot_data_lag = iot_data.loc[event_timestamp - lag*pd.Timedelta(iot_granularity): event_timestamp - (lag-1)*pd.Timedelta(iot_granularity), parameter].mean()
-                            X_batch.loc[(batch, event), parameter + '_lag_' + str(lag)] = iot_data_lag
+                event_timestamp = batch_event_data.loc[event,'CompleteTimestamp']
+                for parameter in iot_parameters:
+                    for lag in range(lag_window+1):
+                        iot_data_lag = iot_data.loc[event_timestamp - lag*pd.Timedelta(iot_granularity): event_timestamp - (lag-1)*pd.Timedelta(iot_granularity), parameter].mean()
+                        X_batch.loc[(batch, event), parameter + '_lag_' + str(lag)] = iot_data_lag
 
-                #X_batch.ffill(inplace=True)
-
-            else:
-                raise ValueError("Wrong target type, acceptable values are: 'pump adjustment is next activity' (rule A) or 'pump adjustment present in next time horizon' (rule B)")
-            #print(X_batch.dtypes)
             X_batch.dropna(inplace=True)
             y_batch.dropna(inplace=True)
 
@@ -117,13 +108,6 @@ for iot_granularity in iot_granularities:
 
         print(len(event_data.loc[event_data['ActivityID'] == 'Pump adjustment']))
         print(y.sum())
-
-        """y.sort_index(inplace=True)
-
-        # slightly reformat X dataframe by defining the case ID as an index for easier access
-        X.reset_index(inplace=True)
-        X.set_index(['CaseID', 'New Timestamp'], inplace=True)
-        X.sort_index(inplace=True)"""
 
         X, y = X.loc[X.index.intersection(y.index)], y.loc[X.index.intersection(y.index)]
         print(X.shape)
@@ -171,10 +155,8 @@ for iot_granularity in iot_granularities:
                                    scoring='accuracy', cv=3, verbose=0, n_jobs=-1)
 
         # fit the grid search to the training data
-        #try:
+
         grid_search.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=0)
-        #except AttributeError:
-        #    print('error')
 
         end_time = time.time()
         training_time = {'training time': end_time - start_time}
