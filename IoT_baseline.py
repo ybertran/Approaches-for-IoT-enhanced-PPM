@@ -17,22 +17,22 @@ import numpy as np
 # define paths, variables and parameters #
 ##########################################
 
-repository_path = 'C:/Users/yanni/OneDrive - UGent/IoT PPM/data/'
-targets_path = 'C:/Users/yanni/OneDrive - UGent/IoT PPM/process_event_data.csv'
-
+repository_path = 'C:/Users/yabertra/OneDrive - UGent/IoT PPM/data/'
+targets_path = 'C:/Users/yabertra/OneDrive - UGent/IoT PPM/process_event_data2.csv'
+save_results = False
 dl = DataLoader(path='repository_path')
 
 event_data = pd.read_csv(targets_path, usecols=['CaseID', 'CompleteTimestamp', 'Vessel', 'ActivityID', 'lifecycle:transition'], parse_dates=['CompleteTimestamp'])
+event_data = event_data.loc[event_data['lifecycle:transition'] == 'complete']
+print(len(event_data.loc[event_data['ActivityID'] == 'Pump adjustment']))
 batches_list = event_data['CaseID'].unique()
+iot_parameters = ['Pump Circulation Flow', 'Filter 1 DeltaP', 'Filter 1 Inlet Pressure', 'Filter 2 DeltaP', 'Tank Pressure']
 
 # define data hyperparameters
-iot_granularities = ['1min'] # granularity level at which IoT data are aggregated ['1h', '15min', '5min', '1min']
-lag_windows = [50, 100] # number of lags to add to the input data (= number of time steps model can see in the past) [5, 10, 25, 50, 100]
+iot_granularities = ['15min'] #['1h', '15min', '5min', '1min'] # granularity level at which IoT data are aggregated ['1h', '15min', '5min', '1min']
+lag_windows = [25] #[0, 5, 10, 25, 50, 100] # number of lags to add to the input data (= number of time steps model can see in the past) [5, 10, 25, 50, 100]
+data_split = {'train': 0.7, 'val': 0.2, 'test': 0.1}
 target = 'pump adjustment is next activity' # how the target variable is defined: either 'pump adjustment is next activity' (rule A) or 'pump adjustment present in next time horizon' (rule B)
-if target == 'pump adjustment present in next time horizon':
-    time_horizon = ['15min', '30min', '1h', '2h'] # time window in which next pump adjustment should occur
-else:
-    time_horizon = ['24h']
 
 # define model hyperparameters
 max_depth = [2, 5, 10]#, 15, 20],
@@ -48,172 +48,176 @@ min_child_weight = [2, 5, 10]#, 15, 20]
 # loop over parameters
 for iot_granularity in iot_granularities:
     print(f'Current IoT granularity = {iot_granularity}')
+    if target == 'pump adjustment present in next iot granularity':
+        time_horizon = [iot_granularity]
 
     for lag_window in lag_windows:
+        #if pd.Timedelta(horizon) < pd.Timedelta(iot_granularity):
+        #    continue
+
         print(f'Current lag window: {lag_window}')
 
-        for horizon in time_horizon:
-            if pd.Timedelta(horizon) < pd.Timedelta(iot_granularity):
-                continue
+        X = pd.DataFrame()
+        y = pd.DataFrame()
 
-            print(f'Current time horizon: {horizon}')
+        # loop over batches
 
-            X = pd.DataFrame()
-            y = pd.DataFrame()
+        for batch in batches_list:
+            file_path = path.join(repository_path, 'Sensor data ' + batch + '.csv')
+            iot_data = pd.read_csv(file_path, sep=';', index_col='New Timestamp', parse_dates=True)
 
-            # loop over batches
+            batch_event_data = event_data.loc[event_data['CaseID'] == batch]
+            batch_event_data.reset_index(inplace=True, drop=True)
 
-            for batch in batches_list:
-                file_path = path.join(repository_path, 'Sensor data ' + batch + '.csv')
-                iot_data = pd.read_csv(file_path, sep=';', index_col='New Timestamp', parse_dates=True)
+            if target == 'pump adjustment is next activity':
 
-                #########################################
-                # aggregate to chosen granularity and lag window length
-                #########################################
+                # define target following rule A: if next event is pump adjustment, target == 1
+                X_y_index = MultiIndex.from_arrays(arrays=[np.full(len(batch_event_data),batch),batch_event_data.index], names=['CaseID', 'New Timestamp'])
+                y_batch = pd.Series(index=X_y_index)
+                X_batch = pd.DataFrame(index=X_y_index, columns= [col + '_lag_' + str(lag) for col in iot_parameters for lag in range(lag_window+1)], dtype = 'float64')
+                # loop over events to check rules and populate the target series
+                for event in batch_event_data.index:
 
-                iot_data_agg = iot_data.resample(iot_granularity).mean()
-                iot_data_lag = dl.add_lags(iot_data_agg, 'index', ['Filter 1 DeltaP', 'Filter 1 Inlet Pressure', 'Filter 2 DeltaP', 'Pump Circulation Flow', 'Tank Pressure'], num_lags=lag_window)
-                iot_data_lag.ffill(inplace=True)
-                iot_data_lag.dropna(inplace=True)
+                    #########################################
+                    # construct target variable accordingly #
+                    #########################################
 
-                #########################################
-                # construct target variable accordingly #
-                #########################################
+                    try:
+                        next_event = batch_event_data.at[event+1, 'ActivityID']
+                        if 'Pump adjustment' == next_event:
+                            y_batch.loc[(batch, event)] = 1
+                        else:
+                            y_batch.loc[(batch, event)] = 0
 
-                batch_event_data = event_data.loc[event_data['CaseID'] == batch]
-                batch_event_data.set_index('CompleteTimestamp', inplace=True)
+                    except KeyError:
+                        #print(batch_event_data.loc[event, 'ActivityID'])
+                        break
 
+                    ##################################################################
+                    # aggregate IoT data to chosen granularity and lag window length #
+                    ##################################################################
 
-                if target == 'pump adjustment is next activity':
+                    event_timestamp = batch_event_data.loc[event,'CompleteTimestamp']
+                    for parameter in iot_parameters:
+                        for lag in range(lag_window+1):
+                            iot_data_lag = iot_data.loc[event_timestamp - lag*pd.Timedelta(iot_granularity): event_timestamp - (lag-1)*pd.Timedelta(iot_granularity), parameter].mean()
+                            X_batch.loc[(batch, event), parameter + '_lag_' + str(lag)] = iot_data_lag
 
-                    # define target following rule A: if next event is pump adjustment, target == 1
-                    y_index = MultiIndex.from_arrays(arrays=[np.full(len(iot_data_lag),batch),iot_data_lag.index], names=['CaseID', 'New Timestamp'])
-                    y_batch = pd.Series(index=y_index, data=np.zeros(len(iot_data_lag)))
-                    #y = pd.Series(index=iot_data_lag.index, data=np.zeros(len(iot_data_lag)))
+                #X_batch.ffill(inplace=True)
 
-                    # loop over time index to check rules and populate the target series
-                    for window in iot_data_lag.index:
-                        try:
-                            next_event = list(batch_event_data.loc[window:, 'ActivityID'])[0]
-                            if 'Pump adjustment' == next_event:
-                                y_batch.loc[(batch, window)] = 1
-                        except IndexError:
-                            print(batch_event_data.loc[window:, 'ActivityID'])
-                            break
+            else:
+                raise ValueError("Wrong target type, acceptable values are: 'pump adjustment is next activity' (rule A) or 'pump adjustment present in next time horizon' (rule B)")
+            #print(X_batch.dtypes)
+            X_batch.dropna(inplace=True)
+            y_batch.dropna(inplace=True)
 
+            # concatenate batches to obtain one data and one target dataframes
+            X = pd.concat([X, X_batch], axis=0)
+            y = pd.concat([y,y_batch], axis=0)
 
-                elif target == 'pump adjustment present in next time horizon':
+        print(len(event_data.loc[event_data['ActivityID'] == 'Pump adjustment']))
+        print(y.sum())
 
-                    # define target following rule B: if next event present in coming time window, target == 1
-                    y_index = MultiIndex.from_arrays(arrays=[np.full(len(iot_data_lag),batch),iot_data_lag.index], names=['CaseID', 'New Timestamp'])
-                    y_batch = pd.Series(index=y_index, data=np.zeros(len(iot_data_lag)))
+        """y.sort_index(inplace=True)
 
-                    # loop over time index to check rules and populate the target series
-                    for window in iot_data_lag.index:
+        # slightly reformat X dataframe by defining the case ID as an index for easier access
+        X.reset_index(inplace=True)
+        X.set_index(['CaseID', 'New Timestamp'], inplace=True)
+        X.sort_index(inplace=True)"""
 
-                        window_end = window + pd.Timedelta(horizon)
-                        next_window_events = list(batch_event_data.loc[window:window_end, 'ActivityID'])
-                        if 'Pump adjustment' in next_window_events:
-                            y_batch.loc[(batch,window)] = 1
+        X, y = X.loc[X.index.intersection(y.index)], y.loc[X.index.intersection(y.index)]
+        print(X.shape)
 
-                else:
-                    raise ValueError("Wrong target type, acceptable values are: 'pump adjustment is next activity' (rule A) or 'pump adjustment present in next time horizon' (rule B)")
+        ##########################################
+        # training and testing datasets creation #
+        ##########################################
 
-                iot_data_lag['CaseID'] = batch
+        # split dataset in training, validation and test sets (following the data_split dictionary)
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=data_split['val'] + data_split['test'], random_state=42)
+        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=data_split['test']/(data_split['val'] + data_split['test']), random_state=42)
 
-                # concatenate batches to obtain one data and one target dataframes
-                X = pd.concat([X, iot_data_lag], axis=0)
-                y = pd.concat([y,y_batch], axis=0)
+        if save_results:
+            X_test.to_csv('generated datasets/X_test ' +  iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows.csv', index=True)
+            y_test.to_csv('generated datasets/y_test ' +  iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows.csv', index=True)
 
-            print(len(event_data.loc[event_data['ActivityID'] == 'Pump adjustment']))
-            print(y.sum())
-            y.sort_index(inplace=True)
+        # handle class imbalance
+        negative_count = (y_train == 0).sum()[0]
+        positive_count = (y_train == 1).sum()[0]
+        scale_pos_weight = negative_count / positive_count
+        print(f"ratio of negative counts: {negative_count}/{positive_count} = {scale_pos_weight}")
 
-            # slightly reformat X dataframe by defining the case ID as an index for easier access
-            X.reset_index(inplace=True)
-            X.set_index(['CaseID', 'New Timestamp'], inplace=True)
-            X.sort_index(inplace=True)
+        ##################
+        # Model training #
+        ##################
 
-            ##########################################
-            # training and testing datasets creation #
-            ##########################################
+        start_time = time.time()
+        print(f'Start of training: {time.ctime(start_time)}')
 
-            # split dataset in training and test sets (80-20)
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # create the model
+        xgb_model = XGBClassifier(scale_pos_weight = scale_pos_weight)#eval_metric='log_loss')
 
-            # handle class imbalance
-            negative_count = (y_train == 0).sum()[0]
-            positive_count = (y_train == 1).sum()[0]
-            scale_pos_weight = negative_count / positive_count
-            print(f"ratio of negative counts: {negative_count}/{positive_count} = {scale_pos_weight}")
+        # set parameters for the XGBoost model
 
-            ##################
-            # Model training #
-            ##################
+        param_grid = {
+            'max_depth': max_depth,
+            'learning_rate': learning_rate,
+            'n_estimators': n_estimators,
+            'subsample': subsample,
+            'min_child_weight': min_child_weight
+        }
 
-            start_time = time.time()
-            print(f'Start of training: {start_time}')
+        # perform grid search
+        grid_search = GridSearchCV(estimator=xgb_model, param_grid=param_grid,
+                                   scoring='accuracy', cv=3, verbose=0, n_jobs=-1)
 
-            # create the model
-            xgb_model = XGBClassifier(scale_pos_weight = scale_pos_weight)#eval_metric='log_loss')
+        # fit the grid search to the training data
+        #try:
+        grid_search.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=0)
+        #except AttributeError:
+        #    print('error')
 
-            # set parameters for the XGBoost model
+        end_time = time.time()
+        training_time = {'training time': end_time - start_time}
+        print(f'Training completed after {training_time['training time']} seconds')
 
-            param_grid = {
-                'max_depth': max_depth,
-                'learning_rate': learning_rate,
-                'n_estimators': n_estimators,
-                'subsample': subsample,
-                'min_child_weight': min_child_weight
-            }
+        #######################
+        # Evaluate best model #
+        #######################
 
-            # perform grid search
-            grid_search = GridSearchCV(estimator=xgb_model, param_grid=param_grid,
-                                       scoring='accuracy', cv=3, verbose=0, n_jobs=-1)
+        # Get the best model
+        best_model = grid_search.best_estimator_
+        hyperparameters = best_model.get_params()
 
-            # fit the grid search to the training data
-            try:
-                grid_search.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=0)
-            except AttributeError:
-                print('error')
+        # print the best parameters and best score
+        print(f"Best parameters for granularity {iot_granularity} and window length {lag_window}:", hyperparameters)
+        print("Best cross-validation accuracy:", grid_search.best_score_)
 
-            end_time = time.time()
-            training_time = {'training time': end_time - start_time}
-            print(f'Training completed after {training_time} seconds')
+        # Make predictions on the test set
+        y_pred = best_model.predict(X_test)
 
-            #######################
-            # Evaluate best model #
-            #######################
+        # Generate the confusion matrix
+        cm = confusion_matrix(y_test, y_pred)
+        print("Confusion Matrix:\n", cm)
 
-            # print the best parameters and best score
-            print(f"Best parameters for granularity {iot_granularity} and window length {lag_window}:", grid_search.best_params_)
-            print("Best cross-validation accuracy:", grid_search.best_score_)
+        # Optional: Print a detailed classification report
+        print("Classification Report:\n", classification_report(y_test, y_pred))
 
-            # Get the best model
-            best_model = grid_search.best_estimator_
+        ###################################
+        # Save best model and xgb results #
+        ###################################
 
-            # Make predictions on the test set
-            y_pred = best_model.predict(X_test)
-
-            # Generate the confusion matrix
-            cm = confusion_matrix(y_test, y_pred)
-            print("Confusion Matrix:\n", cm)
-
-            # Optional: Print a detailed classification report
-            print("Classification Report:\n", classification_report(y_test, y_pred))
-
-            ###################################
-            # Save best model and xgb results #
-            ###################################
-
+        if save_results:
             # create directory to save model and xgb results together
-            save_path = 'xgb results/model ' +  iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows ' + horizon + ' time horizon ' + target + ' target/'
+            save_path = f'xgb results/model {data_split['train']} - {data_split['val']} - {data_split['test']}/'
+            if not path.exists(save_path):
+                mkdir(save_path)
+
+            save_path += iot_granularity + ' iot granularity - ' + str(lag_window) + ' lag windows ' + target + ' target output prob/'
             if not path.exists(save_path):
                 mkdir(save_path)
 
             # save model
             best_model.save_model(save_path + "model.json")
-            hyperparameters = best_model.get_params()
 
             # save model hyperparameters
             with open(save_path + "xgb_parameters.json", "w") as f:
@@ -229,3 +233,4 @@ for iot_granularity in iot_granularities:
 
             ConfusionMatrixDisplay.from_predictions(y_test, y_pred)
             plt.savefig(save_path + 'confusion matrix.png')
+            plt.close()
