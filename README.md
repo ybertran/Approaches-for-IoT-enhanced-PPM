@@ -1,5 +1,15 @@
 # IOTPPM
 
+The file to train the XGBoost baseline:
+- IoT_baseline.py
+
+In this file, we read in the data as CSV files, preprocess them and train the model.
+
+- evaluate_XGB.py
+
+In this file, we evaluate the model, which is read in as a JSON file containing all the parameters and it is run on a test set. 
+The various metrics used to compare models are computed.
+
 The file to train the LSTM:
 - main_LSTM.py
 
